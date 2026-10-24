@@ -1,0 +1,79 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: |
+          xcodebuild -version
+          xcodebuild -project LiDARCamera.xcodeproj -list
+
+      - name: Build unsigned archive
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project LiDARCamera.xcodeproj \
+            -scheme LiDARCamera \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/LiDARCamera.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            clean archive
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/LiDARCamera.xcarchive/Products/Applications/LiDARCamera.app"
+          test -d "$APP"
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
+          cd "$RUNNER_TEMP/ipa"
+          zip -qry LiDARCamera-unsigned.ipa Payload
+          shasum -a 256 LiDARCamera-unsigned.ipa | tee LiDARCamera-unsigned.ipa.sha256
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LiDARCamera-unsigned-ipa
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/ipa/LiDARCamera-unsigned.ipa
+            ${{ runner.temp }}/ipa/LiDARCamera-unsigned.ipa.sha256
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: LiDAR Camera build ${{ github.run_number }}
+          make_latest: true
+          generate_release_notes: true
+          body: |
+            Unsigned iOS IPA built from `${{ github.sha }}`.
+
+            This build is **not code signed**. Install it through a signing or
+            sideloading tool using your own Apple development certificate and
+            provisioning profile.
+          files: |
+            ${{ runner.temp }}/ipa/LiDARCamera-unsigned.ipa
+            ${{ runner.temp }}/ipa/LiDARCamera-unsigned.ipa.sha256
