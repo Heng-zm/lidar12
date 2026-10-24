@@ -36,7 +36,7 @@ enum ScanMode: String, CaseIterable, Codable, Identifiable, Hashable {
         case .depthMap:
             return "A heat-colored distance field. Near surfaces glow warm, far surfaces cool. No image detail ever appears."
         case .pointCloud:
-            return "Every depth pixel becomes a point in space. Move to grow the cloud, drag to look around."
+            return "Every depth pixel becomes a point in space. Move to scan the room, drag to look around."
         }
     }
 
@@ -136,6 +136,14 @@ enum DepthPalette: String, CaseIterable, Codable, Identifiable, Hashable {
     func uiColor(at value: Float) -> UIColor {
         let c = color(at: value)
         return UIColor(red: CGFloat(c.x), green: CGFloat(c.y), blue: CGFloat(c.z), alpha: 1)
+    }
+
+    /// Pre-sampled colors for the CPU capture path, where thousands of
+    /// pixels are colored in a tight loop.
+    var rgbTable: [SIMD3<Float>] {
+        (0..<256).map { index in
+            color(at: Float(index) / 255.0)
+        }
     }
 
     var previewColors: [Color] {

@@ -71,7 +71,7 @@ enum CaptureError: LocalizedError {
 final class CaptureLibrary: ObservableObject {
     @Published private(set) var captures: [CaptureRecord] = []
 
-    nonisolated let rootURL: URL
+    let rootURL: URL
 
     private let thumbnailCache = NSCache<NSString, UIImage>()
     private let fullImageCache = NSCache<NSString, UIImage>()
@@ -82,7 +82,8 @@ final class CaptureLibrary: ObservableObject {
     private static let pointCloudName = "cloud.ply"
 
     init() {
-        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
         rootURL = documents.appendingPathComponent("Captures", isDirectory: true)
 
         if !FileManager.default.fileExists(atPath: rootURL.path) {
@@ -284,8 +285,12 @@ private enum CaptureWriter {
     private static func writePointCloud(snapshot: DepthSnapshot, to url: URL) throws -> Int {
         let width = snapshot.width
         let height = snapshot.height
-        guard width > 0, height > 0 else { throw CaptureError.fileWriteFailed }
+        guard width > 0, height > 0,
+              snapshot.depths.count >= width * height else {
+            throw CaptureError.fileWriteFailed
+        }
 
+        let posixLocale = Locale(identifier: "en_US_POSIX")
         let fx = snapshot.intrinsics.columns.0.x
         let fy = snapshot.intrinsics.columns.1.y
         let cx = snapshot.intrinsics.columns.2.x
@@ -322,6 +327,7 @@ private enum CaptureWriter {
         let depthH = Float(height)
         let imageW = Float(snapshot.imageWidth)
         let imageH = Float(snapshot.imageHeight)
+        let paletteTable = snapshot.palette.rgbTable
 
         for y in 0..<height {
             let v = (Float(y) + 0.5) / depthH
@@ -339,15 +345,16 @@ private enum CaptureWriter {
                 let cameraPoint = SIMD4<Float>(cameraX, cameraY, -depth, 1)
                 let world = snapshot.cameraTransform * cameraPoint
 
-                let rgb = snapshot.palette.color(at: DepthVisualization.normalized(depth))
-                let r = UInt8(min(max(Int(rgb.x * 255), 0), 255))
-                let g = UInt8(min(max(Int(rgb.y * 255), 0), 255))
-                let b = UInt8(min(max(Int(rgb.z * 255), 0), 255))
+                let paletteIndex = Int(DepthVisualization.normalized(depth) * 255)
+                let rgb = paletteTable[paletteIndex]
+                let r = Int32(min(max(Int(rgb.x * 255), 0), 255))
+                let g = Int32(min(max(Int(rgb.y * 255), 0), 255))
+                let b = Int32(min(max(Int(rgb.z * 255), 0), 255))
 
                 output += String(
                     format: "%.4f %.4f %.4f %d %d %d\n",
-                    world.x, world.y, world.z, Int(r),
-                    Int(g), Int(b)
+                    locale: posixLocale,
+                    world.x, world.y, world.z, r, g, b
                 )
             }
         }
@@ -374,6 +381,7 @@ enum DepthImageRenderer {
 
         var bytes = [UInt8](repeating: 0, count: width * height * 4)
         let inverse = snapshot.displayInverse
+        let paletteTable = snapshot.palette.rgbTable
         let backgroundColor: (UInt8, UInt8, UInt8) = (5, 7, 10)
 
         for y in 0..<height {
@@ -406,7 +414,8 @@ enum DepthImageRenderer {
                     continue
                 }
 
-                let rgb = snapshot.palette.color(at: DepthVisualization.normalized(depth))
+                let paletteIndex = Int(DepthVisualization.normalized(depth) * 255)
+                let rgb = paletteTable[paletteIndex]
                 bytes[index] = UInt8(min(max(Int(rgb.x * 255), 0), 255))
                 bytes[index + 1] = UInt8(min(max(Int(rgb.y * 255), 0), 255))
                 bytes[index + 2] = UInt8(min(max(Int(rgb.z * 255), 0), 255))

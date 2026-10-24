@@ -15,7 +15,7 @@ A depth-only iOS camera. It checks for LiDAR hardware **before** the home screen
 
 1. Open `LiDARCamera.xcodeproj`.
 2. Select the `LiDARCamera` target → **Signing & Capabilities**.
-3. Choose your Team and change the bundle identifier from `com.example.LiDARCamera` if needed.
+3. Choose your Team and change the bundle identifier from `com.example.lidarcamera` if needed.
 4. Select a physical LiDAR iPhone and run.
 
 The app refuses to continue on hardware without LiDAR. There is no RGB fallback and no way to skip the check.

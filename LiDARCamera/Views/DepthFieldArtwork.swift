@@ -56,7 +56,7 @@ struct DepthFieldArtwork: View {
                     width: diameter,
                     height: diameter
                 )
-                context.fill(Path(ellipseIn: rect), with: .color(color.opacity(strength)))
+                context.fill(Path(ellipseIn: rect), with: .color(color.opacity(Double(strength))))
             }
         }
 

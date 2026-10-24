@@ -414,7 +414,7 @@ struct CaptureDetailView: View {
             Divider().overlay(AppTheme.hairline)
             detailRow("Depth grid", value: "\(record.depthWidth) × \(record.depthHeight)")
             Divider().overlay(AppTheme.hairline)
-            detailRow("Camera frame", value: "\(record.imageWidth) × \(record.imageHeight)")
+            detailRow("Projection grid", value: "\(record.imageWidth) × \(record.imageHeight)")
             Divider().overlay(AppTheme.hairline)
             detailRow("Palette", value: record.palette.title)
             Divider().overlay(AppTheme.hairline)

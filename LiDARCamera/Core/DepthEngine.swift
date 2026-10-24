@@ -1,5 +1,6 @@
 import ARKit
 import Combine
+import CoreVideo
 import Foundation
 import MetalKit
 import UIKit
@@ -53,6 +54,7 @@ final class DepthEngine: NSObject, ObservableObject, ARSessionDelegate, MTKViewD
 
     private weak var view: MTKView?
     private var renderer: MetalDepthRenderer?
+    private var rendererSetupAttempted = false
 
     private var latestFrame: ARFrame?
     private var firstCameraTransform: simd_float4x4?
@@ -81,6 +83,12 @@ final class DepthEngine: NSObject, ObservableObject, ARSessionDelegate, MTKViewD
             view.setNeedsDisplay()
             return
         }
+
+        // A missing Metal library or pipeline is not recoverable by retrying
+        // inside every SwiftUI update. Fail once and leave the screen in a
+        // stable state.
+        guard !rendererSetupAttempted else { return }
+        rendererSetupAttempted = true
 
         guard let renderer = MetalDepthRenderer(view: view) else {
             state = .failed("The Metal renderer could not be created on this device.")
@@ -192,7 +200,9 @@ final class DepthEngine: NSObject, ObservableObject, ARSessionDelegate, MTKViewD
 
         guard width > 0, height > 0 else { throw CaptureError.noDepthFrame }
 
-        CVPixelBufferLockBaseAddress(depthMap, .readOnly)
+        guard CVPixelBufferLockBaseAddress(depthMap, .readOnly) == kCVReturnSuccess else {
+            throw CaptureError.noDepthFrame
+        }
         defer { CVPixelBufferUnlockBaseAddress(depthMap, .readOnly) }
 
         guard let baseAddress = CVPixelBufferGetBaseAddress(depthMap) else {
@@ -364,7 +374,9 @@ final class DepthEngine: NSObject, ObservableObject, ARSessionDelegate, MTKViewD
         let height = CVPixelBufferGetHeight(depthMap)
         guard width > 1, height > 1 else { return nil }
 
-        CVPixelBufferLockBaseAddress(depthMap, .readOnly)
+        guard CVPixelBufferLockBaseAddress(depthMap, .readOnly) == kCVReturnSuccess else {
+            return nil
+        }
         defer { CVPixelBufferUnlockBaseAddress(depthMap, .readOnly) }
 
         guard let baseAddress = CVPixelBufferGetBaseAddress(depthMap) else { return nil }

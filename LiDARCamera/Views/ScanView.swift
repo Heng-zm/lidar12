@@ -333,14 +333,14 @@ struct ScanView: View {
     }
 
     private var magnificationGesture: some Gesture {
-        MagnificationGesture()
+        MagnifyGesture()
             .onChanged { value in
                 guard engine.state.isLive, engine.mode == .pointCloud else { return }
-                engine.setZoom(zoomStart * value)
+                engine.setZoom(zoomStart * value.magnification)
             }
             .onEnded { value in
                 guard engine.mode == .pointCloud else { return }
-                zoomStart = min(max(zoomStart * value, 1.0), 1.8)
+                zoomStart = min(max(zoomStart * value.magnification, 1.0), 1.8)
                 engine.setZoom(zoomStart)
             }
     }
