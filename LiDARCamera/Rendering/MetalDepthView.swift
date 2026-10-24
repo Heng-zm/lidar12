@@ -1,6 +1,7 @@
 import ARKit
 import CoreVideo
 import MetalKit
+import SwiftUI
 import simd
 import UIKit
 
@@ -74,7 +75,7 @@ final class MetalDepthRenderer {
         }
 
         for palette in DepthPalette.allCases {
-            if let texture = Self.makePaletteTexture(palette, device: device) {
+            if let texture = Self.makePaletteTexture(palette: palette, device: device) {
                 paletteTextures[palette] = texture
             }
         }

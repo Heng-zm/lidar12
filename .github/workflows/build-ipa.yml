@@ -39,7 +39,19 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
-            clean archive
+            clean archive 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
+
+      - name: Publish build failure summary
+        if: failure()
+        run: |
+          if [ -f "$RUNNER_TEMP/xcodebuild.log" ]; then
+            {
+              echo '## xcodebuild failure'
+              echo '```'
+              grep -E 'error:|BUILD FAILED|ARCHIVE FAILED|The following build commands failed' "$RUNNER_TEMP/xcodebuild.log" | tail -n 100 || true
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Package IPA
         run: |
