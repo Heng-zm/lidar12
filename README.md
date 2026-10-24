@@ -92,5 +92,3 @@ IPA, uploads it as a workflow artifact, and attaches it to a GitHub Release.
 The release IPA is **unsigned** because GitHub Actions has no Apple signing
 certificate or provisioning profile. It can be re-signed with your own Apple
 development team using Xcode, Apple Configurator, or a sideloading tool.
-
-# lidar12
