@@ -1,0 +1,64 @@
+name: UI Smoke Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  screenshot:
+    runs-on: macos-15
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build for Simulator
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project LiDARCamera.xcodeproj \
+            -scheme LiDARCamera \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Boot Simulator
+        run: |
+          set -euo pipefail
+          RUNTIME=$(xcrun simctl list runtimes | grep -E 'iOS [0-9]' | tail -n 1 | sed -E 's/.*(com\.apple\.CoreSimulator\.SimRuntime\.iOS-[0-9-]+).*/\1/')
+          DEVICE_TYPE=$(xcrun simctl list devicetypes | grep -m 1 'iPhone 16 Pro (' | sed -E 's/.*\((com\.apple\.[^)]+)\).*/\1/')
+          if [ -z "$DEVICE_TYPE" ]; then
+            DEVICE_TYPE=$(xcrun simctl list devicetypes | grep -m 1 'iPhone 15 Pro (' | sed -E 's/.*\((com\.apple\.[^)]+)\).*/\1/')
+          fi
+          echo "Runtime: $RUNTIME"
+          echo "Device type: $DEVICE_TYPE"
+          UDID=$(xcrun simctl create "LiDAR Smoke" "$DEVICE_TYPE" "$RUNTIME")
+          echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+
+      - name: Install, launch, and capture
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Debug-iphonesimulator/LiDARCamera.app"
+          test -d "$APP"
+          xcrun simctl install "$SIM_UDID" "$APP"
+          xcrun simctl launch "$SIM_UDID" com.example.lidarcamera
+          sleep 8
+          xcrun simctl io "$SIM_UDID" screenshot "$RUNNER_TEMP/launch.png"
+          xcrun simctl spawn "$SIM_UDID" log show --last 2m --predicate 'process == "LiDARCamera"' --style compact > "$RUNNER_TEMP/app.log" || true
+
+      - name: Upload screenshot and log
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-smoke
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/launch.png
+            ${{ runner.temp }}/app.log
