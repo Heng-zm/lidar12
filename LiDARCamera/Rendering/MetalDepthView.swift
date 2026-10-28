@@ -67,8 +67,11 @@ final class MetalDepthRenderer {
         view.framebufferOnly = true
         view.isOpaque = true
         view.preferredFramesPerSecond = 30
-        view.enableSetNeedsDisplay = true
-        view.isPaused = true
+        // Render on the display link instead of relying on setNeedsDisplay.
+        // On-demand drawing can stall when the view is re-attached by SwiftUI,
+        // leaving the depth surface black even though ARKit is streaming.
+        view.enableSetNeedsDisplay = false
+        view.isPaused = false
 
         if CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, device, nil, &textureCache) != kCVReturnSuccess {
             return nil

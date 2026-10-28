@@ -136,7 +136,7 @@ final class DepthEngine: NSObject, ObservableObject, ARSessionDelegate, MTKViewD
         // Smoothed depth is preferred when the device offers it; both paths
         // ultimately resolve through the same 16/32-bit reader below.
         if ARWorldTrackingConfiguration.supportsFrameSemantics(.smoothedSceneDepth) {
-            configuration.frameSemantics = [.smoothedSceneDepth]
+            configuration.frameSemantics = [.sceneDepth, .smoothedSceneDepth]
         } else {
             configuration.frameSemantics = [.sceneDepth]
         }

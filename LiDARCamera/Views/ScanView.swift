@@ -50,6 +50,7 @@ struct ScanView: View {
                 .ignoresSafeArea()
 
             MetalDepthSurface(engine: engine)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()
 
             LinearGradient(
