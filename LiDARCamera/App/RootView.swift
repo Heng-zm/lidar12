@@ -10,12 +10,32 @@ struct RootView: View {
         case checking
         case unsupported
         case home
+        case scan
     }
 
     @StateObject private var library = CaptureLibrary()
     @State private var phase: Phase = .checking
     @State private var report: LiDARCapabilityReport?
     @State private var isChecking = false
+
+    init() {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-demoScan") {
+            _phase = State(initialValue: .scan)
+            _report = State(initialValue: .demo)
+        } else if arguments.contains("-demoHome") {
+            _phase = State(initialValue: .home)
+            _report = State(initialValue: .demo)
+        } else {
+            _phase = State(initialValue: .checking)
+            _report = State(initialValue: nil)
+        }
+        #else
+        _phase = State(initialValue: .checking)
+        _report = State(initialValue: nil)
+        #endif
+    }
 
     var body: some View {
         ZStack {
@@ -44,6 +64,11 @@ struct RootView: View {
                     .transition(.opacity)
                     .zIndex(2)
                 }
+
+            case .scan:
+                ScanView(initialMode: .depthMap)
+                    .transition(.opacity)
+                    .zIndex(3)
             }
         }
         .animation(.easeInOut(duration: 0.4), value: phase)
@@ -81,3 +106,19 @@ struct RootView: View {
     RootView()
         .preferredColorScheme(.dark)
 }
+
+#if DEBUG
+extension LiDARCapabilityReport {
+    static let demo = LiDARCapabilityReport(
+        isSupported: true,
+        hasWorldTracking: true,
+        hasSceneDepth: true,
+        hasSmoothedDepth: true,
+        isSimulator: false,
+        deviceModel: "iPhone 16 Pro",
+        machineIdentifier: "iPhone17,1",
+        systemVersion: "18.0",
+        checkedAt: Date()
+    )
+}
+#endif
