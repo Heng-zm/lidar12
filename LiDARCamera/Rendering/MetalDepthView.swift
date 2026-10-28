@@ -409,6 +409,8 @@ final class SyntheticDepthRenderer: NSObject, MTKViewDelegate {
         self.paletteTexture = palette
         self.depthTexture = depth
 
+        super.init()
+
         view.device = device
         view.colorPixelFormat = .bgra8Unorm
         view.clearColor = MTLClearColorMake(0.010, 0.014, 0.022, 1.0)
