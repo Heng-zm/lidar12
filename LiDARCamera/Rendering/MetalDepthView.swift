@@ -242,7 +242,7 @@ final class MetalDepthRenderer {
         return matrix
     }
 
-    private static func makePipeline(
+    fileprivate static func makePipeline(
         device: MTLDevice,
         library: MTLLibrary,
         pixelFormat: MTLPixelFormat,
@@ -274,7 +274,7 @@ final class MetalDepthRenderer {
         return try? device.makeRenderPipelineState(descriptor: descriptor)
     }
 
-    private static func makePaletteTexture(palette: DepthPalette, device: MTLDevice) -> MTLTexture? {
+    fileprivate static func makePaletteTexture(palette: DepthPalette, device: MTLDevice) -> MTLTexture? {
         let count = 256
         var bytes = [UInt8](repeating: 0, count: count * 4)
 
@@ -346,3 +346,127 @@ struct MetalDepthSurface: UIViewRepresentable {
         uiView.setNeedsDisplay()
     }
 }
+
+#if DEBUG
+// MARK: - Synthetic depth pipeline check
+
+/// Renders a generated depth buffer through the real depth-map shader.
+/// Used by the simulator smoke test to prove the Metal path itself works.
+final class SyntheticDepthRenderer: NSObject, MTKViewDelegate {
+    private let commandQueue: MTLCommandQueue
+    private let pipeline: MTLRenderPipelineState
+    private let paletteTexture: MTLTexture
+    private let depthTexture: MTLTexture
+
+    init?(view: MTKView) {
+        guard let device = view.device ?? MTLCreateSystemDefaultDevice(),
+              let library = device.makeDefaultLibrary(),
+              let queue = device.makeCommandQueue(),
+              let pipeline = MetalDepthRenderer.makePipeline(
+                  device: device,
+                  library: library,
+                  pixelFormat: .bgra8Unorm,
+                  vertex: "depthMapVertex",
+                  fragment: "depthMapFragment",
+                  blending: false
+              ),
+              let palette = MetalDepthRenderer.makePaletteTexture(palette: .thermal, device: device) else {
+            return nil
+        }
+
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .r16Float,
+            width: 256,
+            height: 192,
+            mipmapped: false
+        )
+        descriptor.usage = .shaderRead
+        descriptor.storageMode = .shared
+
+        guard let depth = device.makeTexture(descriptor: descriptor) else { return nil }
+
+        var samples = [Float16](repeating: 0, count: 256 * 192)
+        for y in 0..<192 {
+            for x in 0..<256 {
+                let horizontal = Float(x) / 255.0
+                let vertical = Float(y) / 191.0
+                samples[y * 256 + x] = Float16(0.35 + 4.2 * horizontal * (0.55 + 0.45 * vertical))
+            }
+        }
+
+        samples.withUnsafeBytes { raw in
+            guard let base = raw.baseAddress else { return }
+            depth.replace(
+                region: MTLRegionMake2D(0, 0, 256, 192),
+                mipmapLevel: 0,
+                withBytes: base,
+                bytesPerRow: 256 * MemoryLayout<Float16>.size
+            )
+        }
+
+        self.commandQueue = queue
+        self.pipeline = pipeline
+        self.paletteTexture = palette
+        self.depthTexture = depth
+
+        view.device = device
+        view.colorPixelFormat = .bgra8Unorm
+        view.clearColor = MTLClearColorMake(0.010, 0.014, 0.022, 1.0)
+        view.framebufferOnly = true
+        view.isOpaque = true
+        view.preferredFramesPerSecond = 30
+        view.enableSetNeedsDisplay = false
+        view.isPaused = false
+        view.delegate = self
+    }
+
+    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
+
+    func draw(in view: MTKView) {
+        guard view.drawableSize.width > 0, view.drawableSize.height > 0,
+              let drawable = view.currentDrawable,
+              let pass = view.currentRenderPassDescriptor,
+              let commandBuffer = commandQueue.makeCommandBuffer(),
+              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else {
+            return
+        }
+
+        var uniforms = DepthMapUniforms(
+            displayInverse: matrix_identity_float4x4,
+            params: SIMD4<Float>(0.2, 5.0, 0, 0)
+        )
+
+        encoder.setRenderPipelineState(pipeline)
+        encoder.setFragmentBytes(
+            &uniforms,
+            length: MemoryLayout<DepthMapUniforms>.stride,
+            index: 0
+        )
+        encoder.setFragmentTexture(depthTexture, index: 0)
+        encoder.setFragmentTexture(paletteTexture, index: 1)
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        encoder.endEncoding()
+        commandBuffer.present(drawable)
+        commandBuffer.commit()
+    }
+}
+
+struct SyntheticDepthSurface: UIViewRepresentable {
+    final class Coordinator {
+        var renderer: SyntheticDepthRenderer?
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIView(context: Context) -> MTKView {
+        let view = MTKView(frame: .zero, device: MTLCreateSystemDefaultDevice())
+        view.backgroundColor = UIColor(red: 0.01, green: 0.014, blue: 0.022, alpha: 1)
+        context.coordinator.renderer = SyntheticDepthRenderer(view: view)
+        return view
+    }
+
+    func updateUIView(_ uiView: MTKView, context: Context) {}
+}
+#endif

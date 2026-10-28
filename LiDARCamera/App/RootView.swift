@@ -11,6 +11,7 @@ struct RootView: View {
         case unsupported
         case home
         case scan
+        case synthetic
     }
 
     @StateObject private var library = CaptureLibrary()
@@ -21,7 +22,10 @@ struct RootView: View {
     init() {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("-demoScan") {
+        if arguments.contains("-demoDepth") {
+            _phase = State(initialValue: .synthetic)
+            _report = State(initialValue: .demo)
+        } else if arguments.contains("-demoScan") {
             _phase = State(initialValue: .scan)
             _report = State(initialValue: .demo)
         } else if arguments.contains("-demoHome") {
@@ -69,6 +73,24 @@ struct RootView: View {
                 ScanView(initialMode: .depthMap)
                     .transition(.opacity)
                     .zIndex(3)
+
+            case .synthetic:
+                #if DEBUG
+                ZStack(alignment: .top) {
+                    SyntheticDepthSurface()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .ignoresSafeArea()
+
+                    Text("SYNTHETIC DEPTH PIPELINE")
+                        .font(.mono(11, weight: .bold))
+                        .tracking(2)
+                        .foregroundStyle(.white)
+                        .padding(.top, 70)
+                }
+                .zIndex(3)
+                #else
+                EmptyView()
+                #endif
             }
         }
         .animation(.easeInOut(duration: 0.4), value: phase)

@@ -63,6 +63,7 @@ jobs:
           capture launch
           capture home -demoHome
           capture scan -demoScan
+          capture depth -demoDepth
 
           xcrun simctl spawn "$SIM_UDID" log show --last 5m --predicate 'process == "LiDARCamera"' --style compact > "$RUNNER_TEMP/app.log" || true
 
@@ -75,4 +76,5 @@ jobs:
             ${{ runner.temp }}/launch.png
             ${{ runner.temp }}/home.png
             ${{ runner.temp }}/scan.png
+            ${{ runner.temp }}/depth.png
             ${{ runner.temp }}/app.log
