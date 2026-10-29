@@ -1,4 +1,5 @@
 import ARKit
+import AVFoundation
 import Combine
 import CoreVideo
 import Foundation
@@ -40,6 +41,8 @@ final class DepthEngine: NSObject, ObservableObject, ARSessionDelegate, MTKViewD
     @Published private(set) var state: DepthSessionState = .idle
     @Published private(set) var metrics = DepthMetrics()
     @Published private(set) var isInterrupted = false
+    @Published private(set) var hasRenderedDepth = false
+    @Published private(set) var renderIssue: String?
 
     @Published var mode: ScanMode = .depthMap {
         didSet { requestDisplay() }
@@ -60,6 +63,7 @@ final class DepthEngine: NSObject, ObservableObject, ARSessionDelegate, MTKViewD
     private var firstCameraTransform: simd_float4x4?
     private var announcedStreaming = false
     private var lastMetricsTimestamp: TimeInterval = 0
+    private var startTimeout: DispatchWorkItem?
 
     private var orbitYaw: Float = 0
     private var orbitPitch: Float = 0
@@ -71,6 +75,7 @@ final class DepthEngine: NSObject, ObservableObject, ARSessionDelegate, MTKViewD
     }
 
     deinit {
+        startTimeout?.cancel()
         session.pause()
     }
 
@@ -120,6 +125,12 @@ final class DepthEngine: NSObject, ObservableObject, ARSessionDelegate, MTKViewD
             return
         }
 
+        let cameraAuthorization = AVCaptureDevice.authorizationStatus(for: .video)
+        if cameraAuthorization == .denied || cameraAuthorization == .restricted {
+            state = .failed("Camera access is off. Open Settings and allow Camera so iOS can power the LiDAR sensor.")
+            return
+        }
+
         frameLock.lock()
         latestFrame = nil
         firstCameraTransform = nil
@@ -129,8 +140,22 @@ final class DepthEngine: NSObject, ObservableObject, ARSessionDelegate, MTKViewD
         lastMetricsTimestamp = 0
         metrics = DepthMetrics()
         isInterrupted = false
+        hasRenderedDepth = false
+        renderIssue = nil
         resetOrbit()
         state = .starting
+
+        // Do not leave the user on an indefinite "waiting" screen when ARKit
+        // cannot deliver depth (for example, camera access was denied).
+        startTimeout?.cancel()
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, self.state == .starting else { return }
+            self.session.pause()
+            self.startTimeout = nil
+            self.state = .failed("No depth frames arrived. Check Camera access in Settings, then try again.")
+        }
+        startTimeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: timeout)
 
         let configuration = ARWorldTrackingConfiguration()
         // Smoothed depth is preferred when the device offers it; both paths
@@ -148,6 +173,8 @@ final class DepthEngine: NSObject, ObservableObject, ARSessionDelegate, MTKViewD
     }
 
     func stop() {
+        startTimeout?.cancel()
+        startTimeout = nil
         session.pause()
 
         frameLock.lock()
@@ -157,6 +184,8 @@ final class DepthEngine: NSObject, ObservableObject, ARSessionDelegate, MTKViewD
 
         announcedStreaming = false
         isInterrupted = false
+        hasRenderedDepth = false
+        renderIssue = nil
         state = .idle
         requestDisplay()
     }
@@ -286,6 +315,7 @@ final class DepthEngine: NSObject, ObservableObject, ARSessionDelegate, MTKViewD
 
         if !announcedStreaming {
             announcedStreaming = true
+            startTimeout?.cancel()
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 if self.state == .starting {
@@ -311,6 +341,8 @@ final class DepthEngine: NSObject, ObservableObject, ARSessionDelegate, MTKViewD
     }
 
     func session(_ session: ARSession, didFailWithError error: Error) {
+        startTimeout?.cancel()
+        startTimeout = nil
         let message = error.localizedDescription
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -345,7 +377,7 @@ final class DepthEngine: NSObject, ObservableObject, ARSessionDelegate, MTKViewD
 
         guard let frame, let renderer else { return }
 
-        renderer.draw(
+        switch renderer.draw(
             frame: frame,
             firstCameraTransform: firstTransform,
             mode: mode,
@@ -354,7 +386,21 @@ final class DepthEngine: NSObject, ObservableObject, ARSessionDelegate, MTKViewD
             orbitPitch: orbitPitch,
             zoom: zoom,
             in: view
-        )
+        ) {
+        case .rendered:
+            if !hasRenderedDepth {
+                hasRenderedDepth = true
+            }
+            if renderIssue != nil {
+                renderIssue = nil
+            }
+        case .failed(let message):
+            if renderIssue != message {
+                renderIssue = message
+            }
+        case .waiting:
+            break
+        }
     }
 
     // MARK: Helpers

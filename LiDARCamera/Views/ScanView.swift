@@ -80,6 +80,13 @@ struct ScanView: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
+                if engine.state.isLive, let issue = engine.renderIssue {
+                    renderIssueBanner(issue)
+                        .padding(.horizontal, 18)
+                        .padding(.top, 10)
+                        .transition(.opacity)
+                }
+
                 if engine.isInterrupted {
                     interruptedBanner
                         .padding(.horizontal, 18)
@@ -192,6 +199,11 @@ struct ScanView: View {
     }
 
     private var statusColor: Color {
+        if engine.state.isLive {
+            if engine.renderIssue != nil { return AppTheme.danger }
+            return engine.hasRenderedDepth ? AppTheme.accent : AppTheme.amber
+        }
+
         switch engine.state {
         case .streaming: return AppTheme.accent
         case .starting: return AppTheme.amber
@@ -202,11 +214,47 @@ struct ScanView: View {
 
     private var statusText: String {
         switch engine.state {
-        case .streaming: return "LIVE DEPTH"
+        case .streaming:
+            if engine.renderIssue != nil { return "DEPTH ERROR" }
+            return engine.hasRenderedDepth ? "LIVE DEPTH" : "WAITING FOR DEPTH"
         case .starting: return "STARTING"
         case .failed: return "OFFLINE"
         case .idle: return "STANDBY"
         }
+    }
+
+    private func renderIssueBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(AppTheme.danger)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Depth rendering issue")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(AppTheme.text.opacity(0.9))
+                Text(message)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(AppTheme.muted)
+                    .lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(AppTheme.danger.opacity(0.08))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(AppTheme.danger.opacity(0.22), lineWidth: 1)
+                        }
+                }
+        }
+        .allowsHitTesting(false)
     }
 
     private var interruptedBanner: some View {

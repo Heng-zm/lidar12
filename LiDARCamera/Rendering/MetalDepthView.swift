@@ -20,6 +20,12 @@ private struct PointCloudUniforms {
     var params: SIMD4<Float>
 }
 
+enum DepthRenderResult {
+    case waiting
+    case rendered
+    case failed(String)
+}
+
 // MARK: - Renderer
 
 final class MetalDepthRenderer {
@@ -84,6 +90,7 @@ final class MetalDepthRenderer {
         }
     }
 
+    @discardableResult
     func draw(
         frame: ARFrame,
         firstCameraTransform: simd_float4x4?,
@@ -93,23 +100,33 @@ final class MetalDepthRenderer {
         orbitPitch: Float,
         zoom: Float,
         in view: MTKView
-    ) {
+    ) -> DepthRenderResult {
         guard view.drawableSize.width > 0, view.drawableSize.height > 0,
               let drawable = view.currentDrawable,
               let passDescriptor = view.currentRenderPassDescriptor,
-              let depthData = frame.smoothedSceneDepth ?? frame.sceneDepth,
-              let commandBuffer = commandQueue.makeCommandBuffer(),
-              let textureCache,
-              let paletteTexture = paletteTextures[palette] else {
-            return
+              let commandBuffer = commandQueue.makeCommandBuffer() else {
+            return .waiting
+        }
+
+        guard let depthData = frame.smoothedSceneDepth ?? frame.sceneDepth else {
+            return .waiting
+        }
+        guard let textureCache else {
+            return .failed("The Metal depth texture cache is unavailable.")
+        }
+        guard let paletteTexture = paletteTextures[palette] else {
+            return .failed("The depth palette texture is missing.")
         }
 
         let depthMap = depthData.depthMap
         let depthWidth = CVPixelBufferGetWidth(depthMap)
         let depthHeight = CVPixelBufferGetHeight(depthMap)
-        guard depthWidth > 0, depthHeight > 0,
-              let sampleFormat = DepthSampleFormat(pixelBuffer: depthMap) else {
-            return
+        guard depthWidth > 0, depthHeight > 0 else {
+            return .failed("ARKit returned an empty depth map.")
+        }
+        guard let sampleFormat = DepthSampleFormat(pixelBuffer: depthMap) else {
+            let format = Self.fourCC(CVPixelBufferGetPixelFormatType(depthMap))
+            return .failed("Unsupported depth pixel format \(format).")
         }
 
         var cvTexture: CVMetalTexture?
@@ -127,9 +144,11 @@ final class MetalDepthRenderer {
 
         guard status == kCVReturnSuccess,
               let cvTexture,
-              let depthTexture = CVMetalTextureGetTexture(cvTexture),
-              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: passDescriptor) else {
-            return
+              let depthTexture = CVMetalTextureGetTexture(cvTexture) else {
+            return .failed("Could not map the depth map to Metal (CVReturn \(status)).")
+        }
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: passDescriptor) else {
+            return .failed("Could not create the Metal render encoder.")
         }
 
         encoder.label = "LiDAR depth pass"
@@ -219,9 +238,20 @@ final class MetalDepthRenderer {
         encoder.endEncoding()
         commandBuffer.present(drawable)
         commandBuffer.commit()
+        return .rendered
     }
 
     // MARK: Helpers
+
+    private static func fourCC(_ code: OSType) -> String {
+        let bytes: [UInt8] = [
+            UInt8((code >> 24) & 0xFF),
+            UInt8((code >> 16) & 0xFF),
+            UInt8((code >> 8) & 0xFF),
+            UInt8(code & 0xFF),
+        ]
+        return String(bytes: bytes, encoding: .ascii) ?? "\(code)"
+    }
 
     static func displayInverseMatrix(frame: ARFrame, viewportSize: CGSize) -> simd_float4x4 {
         guard viewportSize.width > 0, viewportSize.height > 0 else {

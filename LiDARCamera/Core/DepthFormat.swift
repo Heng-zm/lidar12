@@ -13,9 +13,11 @@ enum DepthSampleFormat {
 
     init?(pixelBuffer: CVPixelBuffer) {
         switch CVPixelBufferGetPixelFormatType(pixelBuffer) {
-        case kCVPixelFormatType_DepthFloat16:
+        case kCVPixelFormatType_DepthFloat16,
+             kCVPixelFormatType_OneComponent16Half:
             self = .float16
-        case kCVPixelFormatType_DepthFloat32:
+        case kCVPixelFormatType_DepthFloat32,
+             kCVPixelFormatType_OneComponent32Float:
             self = .float32
         default:
             return nil
