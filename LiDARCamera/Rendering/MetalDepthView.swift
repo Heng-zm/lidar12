@@ -229,11 +229,10 @@ final class MetalDepthRenderer {
         }
 
         let display = frame.displayTransform(for: .portrait, viewportSize: viewportSize)
-        let normalizer = CGAffineTransform(
-            scaleX: 1.0 / viewportSize.width,
-            y: 1.0 / viewportSize.height
-        )
-        let inverse = display.concatenating(normalizer).inverted()
+        // `displayTransform` already returns normalized viewport coordinates;
+        // do not scale by the viewport size or the inverse will point far
+        // outside the depth image (which renders as a fully black surface).
+        let inverse = display.inverted()
 
         var matrix = matrix_identity_float4x4
         matrix.columns.0 = SIMD4<Float>(Float(inverse.a), Float(inverse.b), 0, 0)
